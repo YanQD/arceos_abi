@@ -16,9 +16,8 @@ use axhal::time::{monotonic_time_nanos as current_time_nanos, NANOS_PER_MICROS, 
 use axlog::{info, warn};
 use crate::mem::MemorySet;
 
-use crate::signal::signal_no::SignalNo;
 use axsync::Mutex;
-use axtask::{current, current_processor, yield_now, AxTaskRef, CurrentTask, TaskId, TaskState};
+use crate::task::{current, current_processor, yield_now, AxTaskRef, CurrentTask, TaskId, TaskState};
 use core::sync::atomic::AtomicI32;
 use elf_parser::{
     get_app_stack_region, get_auxv_vector, get_elf_entry, get_elf_segments, get_relocate_pairs,
@@ -26,11 +25,8 @@ use elf_parser::{
 use xmas_elf::program::SegmentData;
 
 use crate::process::flags::WaitStatus;
-use crate::process::futex::futex_wake;
 use crate::process::link::real_path;
 use crate::process::{Process, PID2PC, TID2TASK};
-
-use crate::process::signal::{send_signal_to_process, send_signal_to_thread};
 
 /// 初始化内核调度进程
 pub fn init_kernel_process() {
@@ -70,48 +66,15 @@ pub fn exit_current_task(exit_code: i32) -> ! {
     let curr_id = current_task.id().as_u64();
 
     info!("exit task id {} with code _{}_", curr_id, exit_code);
-    // 检查这个任务是否有sig_child信号
-    let exit_signal = process
-        .signal_modules
-        .lock()
-        .get(&curr_id)
-        .unwrap()
-        .get_exit_signal();
 
-    if exit_signal.is_some() || current_task.is_leader() {
-        let parent = process.get_parent();
-        if parent != KERNEL_PROCESS_ID {
-            // send exit signal
-            let signal = if exit_signal.is_some() {
-                exit_signal.unwrap()
-            } else {
-                SignalNo::SIGCHLD
-            };
-            send_signal_to_process(parent as isize, signal as isize, None).unwrap();
-        }
-    }
     // clear_child_tid 的值不为 0，则将这个用户地址处的值写为0
     let clear_child_tid = current_task.get_clear_child_tid();
-    if clear_child_tid != 0 {
-        // 先确认是否在用户空间
-        if process
-            .manual_alloc_for_lazy(clear_child_tid.into())
-            .is_ok()
-        {
-            unsafe {
-                *(clear_child_tid as *mut i32) = 0;
-                let _ = futex_wake(clear_child_tid.into(), 0, 1);
-            }
-        }
-    }
     if current_task.is_leader() {
         loop {
             let mut all_exited = true;
             for task in process.tasks.lock().deref() {
                 if !task.is_leader() && task.state() != TaskState::Exited {
                     all_exited = false;
-                    send_signal_to_thread(task.id().as_u64() as isize, SignalNo::SIGKILL as isize)
-                        .unwrap();
                 }
             }
             if !all_exited {
@@ -128,8 +91,6 @@ pub fn exit_current_task(exit_code: i32) -> ! {
         process.tasks.lock().clear();
         process.fd_manager.fd_table.lock().clear();
 
-        process.signal_modules.lock().clear();
-
         let mut pid2pc = PID2PC.lock();
         let kernel_process = pid2pc.get(&KERNEL_PROCESS_ID).unwrap();
         // 将子进程交给idle进程
@@ -137,9 +98,6 @@ pub fn exit_current_task(exit_code: i32) -> ! {
         for child in process.children.lock().deref() {
             child.set_parent(KERNEL_PROCESS_ID);
             kernel_process.children.lock().push(Arc::clone(child));
-        }
-        if let Some(parent_process) = pid2pc.get(&process.get_parent()) {
-            parent_process.set_vfork_block(false);
         }
         pid2pc.remove(&process.pid());
         drop(pid2pc);
@@ -157,7 +115,6 @@ pub fn exit_current_task(exit_code: i32) -> ! {
         }
         drop(tasks);
 
-        process.signal_modules.lock().remove(&curr_id);
         drop(process);
     }
     axtask::exit(exit_code);
@@ -207,12 +164,10 @@ pub fn load_app(
     let relocate_pairs = get_relocate_pairs(&elf, elf_base_addr);
     for segment in segments {
         memory_set.new_region(
-            segment.vaddr,
+            VirtAddr::from(segment.vaddr.as_usize()),
             segment.size,
-            false,
             segment.flags,
             segment.data.as_deref(),
-            None,
         );
     }
 
@@ -229,10 +184,8 @@ pub fn load_app(
     memory_set.new_region(
         heap_start,
         MAX_USER_HEAP_SIZE,
-        false,
         MappingFlags::READ | MappingFlags::WRITE | MappingFlags::USER,
         Some(&heap_data),
-        None,
     );
     info!(
         "[new region] user heap: [{:?}, {:?})",
@@ -249,10 +202,8 @@ pub fn load_app(
     memory_set.new_region(
         stack_top,
         stack_size,
-        false,
         MappingFlags::USER | MappingFlags::READ | MappingFlags::WRITE,
         Some(&stack_data),
-        None,
     );
     info!(
         "[new region] user stack: [{:?}, {:?})",
@@ -299,8 +250,6 @@ pub fn handle_page_fault(addr: VirtAddr, flags: MappingFlags) {
         .is_ok()
     {
         axhal::arch::flush_tlb(None);
-    } else {
-        let _ = send_signal_to_thread(current().id().as_u64() as isize, SignalNo::SIGSEGV as isize);
     }
 }
 

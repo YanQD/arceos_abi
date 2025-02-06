@@ -29,6 +29,17 @@ static_assertions = "1.1.0"
 xmas-elf = "0.9.0"
 elf_parser = { git = "https://github.com/Starry-OS/elf_parser.git" }
 
+spinlock = { git = "https://github.com/Starry-OS/spinlock.git"}
+linked_list = { git = "https://github.com/Starry-OS/linked_list.git" }
+percpu = { git = "https://github.com/Starry-OS/percpu.git"}
+lazy_init = { git = "https://github.com/Starry-OS/lazy_init.git" }
+scheduler = { git = "https://github.com/Starry-OS/scheduler.git" }
 
 [features]
 multitask = []
+irq = []
+monolithic = []
+preempt = ["irq"]
+sched_fifo = ["multitask"]
+sched_rr = ["multitask", "preempt"]
+sched_cfs = ["multitask", "preempt"]

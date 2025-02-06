@@ -8,7 +8,16 @@ version = "9.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ac42a04a61c19fc8196dd728022a784baecc5d63d7e256c01ad1b3fbfab26287"
 dependencies = [
- "tock-registers",
+ "tock-registers 0.8.1",
+]
+
+[[package]]
+name = "aarch64-cpu"
+version = "10.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6a21cd0131c25c438e19cd6a774adf7e3f64f7f4d723022882facc2dee0f8bc9"
+dependencies = [
+ "tock-registers 0.9.0",
 ]
 
 [[package]]
@@ -135,12 +144,17 @@ dependencies = [
  "cfg-if",
  "elf",
  "elf_parser",
+ "lazy_init",
  "lazy_static",
+ "linked_list 0.1.0 (git+https://github.com/Starry-OS/linked_list.git)",
  "memory_addr 0.3.1",
  "numeric-enum-macro",
  "page_table_multiarch",
+ "percpu 0.1.0",
  "printf-compat",
  "riscv 0.12.1",
+ "scheduler 0.1.0 (git+https://github.com/Starry-OS/scheduler.git)",
+ "spinlock",
  "static_assertions",
  "xmas-elf",
 ]
@@ -160,7 +174,7 @@ name = "arceos_api"
 version = "0.1.0"
 dependencies = [
  "axalloc",
- "axconfig",
+ "axconfig 0.1.0",
  "axdisplay",
  "axdma",
  "axdriver",
@@ -182,7 +196,7 @@ name = "arceos_posix_api"
 version = "0.1.0"
 dependencies = [
  "axalloc",
- "axconfig",
+ "axconfig 0.1.0",
  "axerrno 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "axfeat",
  "axfs",
@@ -206,7 +220,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "47d25e73c949c69f75d1b9dba39c5475523403b31eb8c2fdc99da4dc33bc1aca"
 dependencies = [
- "tock-registers",
+ "tock-registers 0.8.1",
 ]
 
 [[package]]
@@ -215,7 +229,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "efcf6afca4502993a737ba1e00952d1321078689da92bf7aab27d4e5756c0bec"
 dependencies = [
- "tock-registers",
+ "tock-registers 0.8.1",
 ]
 
 [[package]]
@@ -262,6 +276,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "axconfig"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/axconfig.git#2a8803384caa8ee69af3156c0df8dc2cd9722539"
+dependencies = [
+ "serde",
+ "toml_edit",
+]
+
+[[package]]
 name = "axconfig-gen"
 version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -300,7 +323,7 @@ version = "0.1.0"
 dependencies = [
  "allocator",
  "axalloc",
- "axconfig",
+ "axconfig 0.1.0",
  "axerrno 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "axhal",
  "axmm",
@@ -314,7 +337,7 @@ name = "axdriver"
 version = "0.1.0"
 dependencies = [
  "axalloc",
- "axconfig",
+ "axconfig 0.1.0",
  "axdma",
  "axdriver_base",
  "axdriver_block",
@@ -474,19 +497,19 @@ dependencies = [
 name = "axhal"
 version = "0.1.0"
 dependencies = [
- "aarch64-cpu",
+ "aarch64-cpu 9.4.0",
  "arm_gicv2",
  "arm_pl011",
  "arm_pl031",
  "axalloc",
- "axconfig",
+ "axconfig 0.1.0",
  "axlog",
  "bitflags 2.6.0",
  "cfg-if",
  "dw_apb_uart",
  "handler_table",
  "int_ratio",
- "kernel_guard",
+ "kernel_guard 0.1.1",
  "kspin",
  "lazyinit",
  "linkme",
@@ -494,13 +517,13 @@ dependencies = [
  "memory_addr 0.3.1",
  "page_table_entry 0.5.0",
  "page_table_multiarch",
- "percpu",
+ "percpu 0.1.6",
  "raw-cpuid 11.1.0",
  "riscv 0.11.1",
  "riscv_goldfish",
  "sbi-rt",
  "static_assertions",
- "tock-registers",
+ "tock-registers 0.8.1",
  "x2apic",
  "x86",
  "x86_64 0.15.2",
@@ -540,10 +563,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "axmem"
+version = "0.1.0"
+dependencies = [
+ "axalloc",
+ "axerrno 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "axhal",
+ "axlog",
+ "axsync",
+ "axtask",
+]
+
+[[package]]
 name = "axmm"
 version = "0.1.0"
 dependencies = [
- "axconfig",
+ "axconfig 0.1.0",
  "axerrno 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
  "axhal",
  "kspin",
@@ -571,11 +606,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "axprocess"
+version = "0.1.0"
+dependencies = [
+ "axerrno 0.1.0 (registry+https://github.com/rust-lang/crates.io-index)",
+ "axfs",
+ "axhal",
+ "axio",
+ "axlog",
+ "axmem",
+ "axsync",
+ "axtask",
+ "bitflags 2.6.0",
+ "elf_parser",
+ "riscv 0.12.1",
+ "xmas-elf",
+]
+
+[[package]]
 name = "axruntime"
 version = "0.1.0"
 dependencies = [
  "axalloc",
- "axconfig",
+ "axconfig 0.1.0",
  "axdisplay",
  "axdriver",
  "axfs",
@@ -586,8 +639,8 @@ dependencies = [
  "axtask",
  "chrono",
  "crate_interface",
- "kernel_guard",
- "percpu",
+ "kernel_guard 0.1.1",
+ "percpu 0.1.6",
 ]
 
 [[package]]
@@ -615,20 +668,26 @@ dependencies = [
 name = "axtask"
 version = "0.1.0"
 dependencies = [
- "axconfig",
+ "axconfig 0.1.0",
  "axhal",
+ "axlog",
  "axtask",
  "cfg-if",
  "cpumask",
  "crate_interface",
- "kernel_guard",
+ "kernel_guard 0.1.1",
  "kspin",
+ "lazy_init",
  "lazyinit",
+ "linked_list 0.1.0 (git+https://github.com/Starry-OS/linked_list.git)",
  "log",
  "memory_addr 0.3.1",
- "percpu",
+ "numeric-enum-macro",
+ "percpu 0.1.6",
  "rand",
- "scheduler",
+ "scheduler 0.1.0 (git+https://github.com/arceos-org/scheduler.git?tag=v0.1.0)",
+ "spinlock",
+ "static_assertions",
  "timer_list",
 ]
 
@@ -643,9 +702,9 @@ name = "bcm2835-sdhci"
 version = "0.1.0"
 source = "git+https://github.com/lhw2002426/bcm2835-sdhci.git?rev=e974f16#e974f168efa72b470a01f61bdef32240c66f54fc"
 dependencies = [
- "aarch64-cpu",
+ "aarch64-cpu 9.4.0",
  "log",
- "tock-registers",
+ "tock-registers 0.8.1",
  "volatile 0.2.7",
 ]
 
@@ -943,7 +1002,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f93d496c8faa9dc676ebfa225432e1e3b57645c9268ead889286546f6d39356d"
 dependencies = [
- "tock-registers",
+ "tock-registers 0.8.1",
 ]
 
 [[package]]
@@ -1167,6 +1226,15 @@ dependencies = [
 
 [[package]]
 name = "kernel_guard"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/kernel_guard.git#c087bf99eecf1527b2264359ad8ea6467fe69ed1"
+dependencies = [
+ "cfg-if",
+ "taskctx",
+]
+
+[[package]]
+name = "kernel_guard"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "36172feaa47f9967efd3bc5fc77462899286e821de3de68c5fe88176a24d3a1f"
@@ -1182,8 +1250,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "51954c939251c5899b6e953aa0ed8903c5c0d1140fc7ce3a8fd60c931d694f6e"
 dependencies = [
  "cfg-if",
- "kernel_guard",
+ "kernel_guard 0.1.1",
 ]
+
+[[package]]
+name = "lazy_init"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/lazy_init.git#d0e87c05b715063cc517de50ad5da15b13281def"
 
 [[package]]
 name = "lazy_static"
@@ -1232,6 +1305,11 @@ checksum = "0717cef1bc8b636c6e1c1bbdefc09e6322da8a9321966e8928ef80d20f7f770f"
 name = "linked_list"
 version = "0.1.0"
 source = "git+https://github.com/arceos-org/linked_list.git?tag=v0.1.0#34c8db301882cecfeb56df0f7c89978dbc62f49a"
+
+[[package]]
+name = "linked_list"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/linked_list.git#283dddc46fac48d007eb3c67ea52f1b136d15c13"
 
 [[package]]
 name = "linkme"
@@ -1337,7 +1415,7 @@ name = "page_table_entry"
 version = "0.1.0"
 source = "git+https://github.com/Starry-OS/page_table_entry.git#8a871b43e07dd3b6da5512528566686e6bc949a9"
 dependencies = [
- "aarch64-cpu",
+ "aarch64-cpu 9.4.0",
  "bitflags 2.6.0",
  "memory_addr 0.1.0",
  "x86_64 0.15.2",
@@ -1349,7 +1427,7 @@ version = "0.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "069d6f06c815a18754ddf47c44a3b70ece3ce62ac092e078024cfcc0c12185f4"
 dependencies = [
- "aarch64-cpu",
+ "aarch64-cpu 9.4.0",
  "bitflags 2.6.0",
  "memory_addr 0.3.1",
  "x86_64 0.15.2",
@@ -1376,15 +1454,36 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "percpu"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/percpu.git#85e6d8a74f19ac54004e64d42cda07d14042e3ee"
+dependencies = [
+ "cfg-if",
+ "percpu_macros 0.1.0",
+ "spin",
+ "x86",
+]
+
+[[package]]
+name = "percpu"
 version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "66a1cb7a2ae1e4ada6e7fd9e46b6b2024353f28d17661d480c8238927571cbd3"
 dependencies = [
  "cfg-if",
- "kernel_guard",
- "percpu_macros",
+ "kernel_guard 0.1.1",
+ "percpu_macros 0.1.6",
  "spin",
  "x86",
+]
+
+[[package]]
+name = "percpu_macros"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/percpu_macros.git#b785b814c5489ac7043d80ea4b5a735b23ec2321"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.70",
 ]
 
 [[package]]
@@ -1644,7 +1743,15 @@ name = "scheduler"
 version = "0.1.0"
 source = "git+https://github.com/arceos-org/scheduler.git?tag=v0.1.0#c8d25d9aed146dca28dc8987afd229b52c20361a"
 dependencies = [
- "linked_list",
+ "linked_list 0.1.0 (git+https://github.com/arceos-org/linked_list.git?tag=v0.1.0)",
+]
+
+[[package]]
+name = "scheduler"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/scheduler.git#036a029933b2cf4c030ef7ce10a11a786c53cd42"
+dependencies = [
+ "linked_list 0.1.0 (git+https://github.com/Starry-OS/linked_list.git)",
 ]
 
 [[package]]
@@ -1732,6 +1839,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spinlock"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/spinlock.git#0149e52d3e4f21ea7bf9bb85f6fe7fc3702d4f1f"
+dependencies = [
+ "cfg-if",
+ "kernel_guard 0.1.0",
+]
+
+[[package]]
 name = "stable_deref_trait"
 version = "1.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1785,6 +1901,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "taskctx"
+version = "0.1.0"
+source = "git+https://github.com/Starry-OS/taskctx.git#bee485a8273916bdc5cfc96c42abacb1594de560"
+dependencies = [
+ "aarch64-cpu 10.0.0",
+ "axconfig 0.1.0 (git+https://github.com/Starry-OS/axconfig.git)",
+ "cfg-if",
+ "log",
+ "memory_addr 0.1.0",
+ "numeric-enum-macro",
+ "static_assertions",
+ "tock-registers 0.9.0",
+ "x86",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.47"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1815,6 +1947,12 @@ name = "tock-registers"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "696941a0aee7e276a165a978b37918fd5d22c55c3d6bda197813070ca9c0f21c"
+
+[[package]]
+name = "tock-registers"
+version = "0.9.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b9e2fdb3a1e862c0661768b7ed25390811df1947a8acbfbefe09b47078d93c4"
 
 [[package]]
 name = "toml"

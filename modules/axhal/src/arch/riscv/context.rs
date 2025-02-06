@@ -158,3 +158,64 @@ unsafe extern "C" fn context_switch(_current_task: &mut TaskContext, _next_task:
         ret",
     )
 }
+
+#[allow(unused)]
+/// To switch the context between two tasks
+pub fn task_context_switch(prev_ctx: &mut TaskContext, next_ctx: &TaskContext) {
+    #[cfg(feature = "tls")]
+    {
+        prev_ctx.tp = super::read_thread_pointer();
+        unsafe { super::write_thread_pointer(next_ctx.tp) };
+    }
+    unsafe {
+        // TODO: switch FP states
+        context_switch(prev_ctx, next_ctx)
+    }
+}
+
+#[unsafe(no_mangle)]
+/// To handle the first time into the user space
+///
+/// 1. push the given trap frame into the kernel stack
+/// 2. go into the user space
+///
+/// args:
+///
+/// 1. kernel_sp: the top of the kernel stack
+///
+/// 2. frame_base: the address of the trap frame which will be pushed into the kernel stack
+pub fn first_into_user(kernel_sp: usize) {
+    // Make sure that all csr registers are stored before enable the interrupt
+    use crate::arch::{disable_irqs, flush_tlb};
+
+    disable_irqs();
+    flush_tlb(None);
+
+    let trap_frame_size = core::mem::size_of::<TrapFrame>();
+    let kernel_base = kernel_sp - trap_frame_size;
+    unsafe {
+        core::arch::asm!(
+            r"
+            mv      sp, {kernel_base}
+            .short  0x2432                      // fld fs0,264(sp)
+            .short  0x24d2                      // fld fs1,272(sp)
+            LDR     t0, sp, 2
+            STR     gp, sp, 2
+            mv      gp, t0
+            LDR     t0, sp, 3
+            STR     tp, sp, 3                   // save supervisor tp. Note that it is stored on the kernel stack rather than in sp, in which case the ID of the currently running CPU should be stored
+            mv      tp, t0                      // tp: now it stores the TLS pointer to the corresponding thread
+            csrw    sscratch, {kernel_sp}       // put supervisor sp to scratch
+            LDR     t0, sp, 31
+            LDR     t1, sp, 32
+            csrw    sepc, t0
+            csrw    sstatus, t1
+            POP_GENERAL_REGS
+            LDR     sp, sp, 1
+            sret
+        ",
+            kernel_sp = in(reg) kernel_sp,
+            kernel_base = in(reg) kernel_base,
+        );
+    };
+}

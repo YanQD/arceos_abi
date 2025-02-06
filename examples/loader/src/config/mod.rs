@@ -13,3 +13,5 @@ pub const USER_STACK_TOP: usize = 0;
 pub const TASK_STACK_SIZE: usize = 0x40000;
 /// The base address of the signal trampoline.
 pub const SIGNAL_TRAMPOLINE: usize = 0;
+/// Number of CPUs
+pub const SMP: usize = 1;

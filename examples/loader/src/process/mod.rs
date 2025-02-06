@@ -5,10 +5,7 @@ mod process;
 pub use process::{Process, PID2PC, TID2TASK};
 
 pub mod flags;
-pub mod futex;
 pub mod link;
 mod stdio;
 
 mod fd_manager;
-
-pub mod signal;

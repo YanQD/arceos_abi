@@ -1,4 +1,4 @@
-//! [ArceOS](https://github.com/arceos-org/arceos) task management module.
+//! [ArceOS](https://github.com/rcore-os/arceos) task management module.
 //!
 //! This module provides primitives for task management, including task
 //! creation, scheduling, sleeping, termination, etc. The scheduler algorithm
@@ -28,23 +28,25 @@
 #![cfg_attr(not(test), no_std)]
 #![feature(doc_cfg)]
 #![feature(doc_auto_cfg)]
-#![feature(linkage)]
-
-#[cfg(test)]
-mod tests;
-
+#![feature(stmt_expr_attributes)]
 cfg_if::cfg_if! {
     if #[cfg(feature = "multitask")] {
         #[macro_use]
         extern crate log;
         extern crate alloc;
 
-        #[macro_use]
-        mod run_queue;
+        mod processor;
         mod task;
-        mod task_ext;
+        mod taskctx;
+
+        mod schedule;
         mod api;
+        mod wait_list;
         mod wait_queue;
+
+        pub use wait_list::{WaitTaskList, WaitTaskNode};
+        pub use crate::task::TaskState;
+        pub use taskctx::{SchedPolicy, SchedStatus, MAX_RT_PRIO};
 
         #[cfg(feature = "irq")]
         mod timers;
@@ -52,8 +54,9 @@ cfg_if::cfg_if! {
         #[doc(cfg(feature = "multitask"))]
         pub use self::api::*;
         pub use self::api::{sleep, sleep_until, yield_now};
+
     } else {
         mod api_s;
-        pub use self::api_s::{sleep, sleep_until, yield_now};
+        pub use self::api_s::*;
     }
 }

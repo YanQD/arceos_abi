@@ -215,3 +215,74 @@ unsafe extern "C" fn context_switch(_current_stack: &mut u64, _next_stack: &u64)
         ret",
     )
 }
+
+#[allow(unused)]
+/// To switch the context between two tasks
+pub fn task_context_switch(prev_ctx: &mut TaskContext, next_ctx: &TaskContext) {
+    #[cfg(feature = "tls")]
+    {
+        prev_ctx.tp = super::read_thread_pointer();
+        unsafe { super::write_thread_pointer(next_ctx.tp) };
+    }
+    unsafe {
+        // TODO: switch FP states
+        context_switch(&mut prev_ctx.rsp, &next_ctx.rsp)
+    }
+}
+
+#[unsafe(no_mangle)]
+/// To handle the first time into the user space
+///
+/// 1. push the given trap frame into the kernel stack
+/// 2. go into the user space
+///
+/// args:
+///
+/// 1. kernel_sp: the top of the kernel stack
+///
+/// 2. frame_base: the address of the trap frame which will be pushed into the kernel stack
+pub fn first_into_user(kernel_sp: usize) {
+    // // Make sure that all csr registers are stored before enable the interrupt
+    // use memory_addr::VirtAddr;
+
+    // use crate::arch::flush_tlb;
+
+    // use super::disable_irqs;
+    // disable_irqs();
+    // flush_tlb(None);
+
+    // let trap_frame_size = core::mem::size_of::<TrapFrame>();
+    // let kernel_base = kernel_sp - trap_frame_size;
+    // crate::set_tss_stack_top(VirtAddr::from(kernel_sp));
+    // unsafe {
+    //     core::arch::asm!(
+    //         r"
+    //                 mov     gs:[offset __PERCPU_KERNEL_RSP_OFFSET], {kernel_sp}
+
+    //                 mov      rsp, {kernel_base}
+
+    //                 pop rax
+    //                 pop rcx
+    //                 pop rdx
+    //                 pop rbx
+    //                 pop rbp
+    //                 pop rsi
+    //                 pop rdi
+    //                 pop r8
+    //                 pop r9
+    //                 pop r10
+    //                 pop r11
+    //                 pop r12
+    //                 pop r13
+    //                 pop r14
+    //                 pop r15
+    //                 add rsp, 16
+
+    //                 swapgs
+    //                 iretq
+    //             ",
+    //         kernel_sp = in(reg) kernel_sp,
+    //         kernel_base = in(reg) kernel_base,
+    //     );
+    // };
+}

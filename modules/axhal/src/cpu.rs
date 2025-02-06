@@ -56,7 +56,7 @@ pub fn current_task_ptr<T>() -> *const T {
 ///
 /// The given `ptr` must be pointed to a valid task structure.
 #[inline]
-pub unsafe fn set_current_task_ptr<T>(ptr: *const T) {
+pub unsafe fn  set_current_task_ptr<T>(ptr: *const T) {
     #[cfg(target_arch = "x86_64")]
     {
         unsafe { CURRENT_TASK_PTR.write_current_raw(ptr as usize) }

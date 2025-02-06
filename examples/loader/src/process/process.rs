@@ -13,22 +13,19 @@ use axhal::mem::{phys_to_virt, VirtAddr};
 
 use axhal::time::monotonic_time_nanos as current_time_nanos;
 use axlog::{debug, error};
+use axsync::Mutex;
 use crate::arch::read_trapframe_from_kstack;
 use crate::arch::{riscv64::write_page_table_root0, write_trapframe_to_kstack};
 use crate::config::KERNEL_PROCESS_ID;
 use crate::config::SIGNAL_TRAMPOLINE;
 use crate::config::TASK_STACK_SIZE;
 use crate::mem::MemorySet;
-use crate::signal::signal_no::SignalNo;
-use axsync::Mutex;
-use axtask::{current, new_task, AxTaskRef, Processor, TaskId};
+use crate::task::{current, new_task, AxTaskRef, Processor, TaskId};
 use core::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 
 use crate::process::fd_manager::{FdManager, FdTable};
 use crate::process::flags::CloneFlags;
-use crate::process::futex::FutexRobustList;
 
-use crate::process::signal::SignalModule;
 use crate::process::stdio::{Stderr, Stdin, Stdout};
 use crate::process::{load_app, yield_now_task};
 
@@ -47,140 +44,92 @@ unsafe extern "C" {
 pub struct Process {
     /// 进程号
     pid: u64,
-
-    /// 父进程号
+    /// 父进程号 
     pub parent: AtomicU64,
-
     /// 栈大小
     pub stack_size: AtomicU64,
-
     /// 子进程
     pub children: Mutex<Vec<Arc<Process>>>,
-
     /// 所管理的线程
     pub tasks: Mutex<Vec<AxTaskRef>>,
-
     /// 文件描述符管理器
     pub fd_manager: FdManager,
-
     /// 进程状态
     pub is_zombie: AtomicBool,
-
     /// 退出状态码
     pub exit_code: AtomicI32,
-
     /// 地址空间
     pub memory_set: Mutex<Arc<Mutex<MemorySet>>>,
-
-    /// 用户堆基址，任何时候堆顶都不能比这个值小，理论上讲是一个常量
+    /// 堆空间管理
     pub heap_bottom: AtomicU64,
-
-    /// 当前用户堆的堆顶，不能小于基址，不能大于基址加堆的最大大小
     pub heap_top: AtomicU64,
-
-    /// 信号处理模块
-    /// 第一维代表TaskID，第二维代表对应的信号处理模块
-    pub signal_modules: Mutex<BTreeMap<u64, SignalModule>>,
-
-    /// robust list存储模块
-    /// 用来存储线程对共享变量的使用地址
-    /// 具体使用交给了用户空间
-    pub robust_list: Mutex<BTreeMap<u64, FutexRobustList>>,
-
-    /// 是否被vfork阻塞
-    pub blocked_by_vfork: Mutex<bool>,
-
-    /// 该进程可执行文件所在的路径
+    /// 可执行文件路径
     pub file_path: Mutex<String>,
-}
+ }
 
 impl Process {
     /// get the process id
     pub fn pid(&self) -> u64 {
         self.pid
     }
-
     /// TODO: 改变了新创建的任务栈大小，但未实现当前任务的栈扩展
     /// set stack size
     pub fn set_stack_limit(&self, limit: u64) {
         self.stack_size.store(limit, Ordering::Release)
     }
-
     /// get stack size
     pub fn get_stack_limit(&self) -> u64 {
         self.stack_size.load(Ordering::Acquire)
     }
-
     /// get the parent process id
     pub fn get_parent(&self) -> u64 {
         self.parent.load(Ordering::Acquire)
     }
-
     /// set the parent process id
     pub fn set_parent(&self, parent: u64) {
         self.parent.store(parent, Ordering::Release)
     }
-
     /// get the exit code of the process
     pub fn get_exit_code(&self) -> i32 {
         self.exit_code.load(Ordering::Acquire)
     }
-
     /// set the exit code of the process
     pub fn set_exit_code(&self, exit_code: i32) {
         self.exit_code.store(exit_code, Ordering::Release)
     }
-
     /// whether the process is a zombie process
     pub fn get_zombie(&self) -> bool {
         self.is_zombie.load(Ordering::Acquire)
     }
-
     /// set the process as a zombie process
     pub fn set_zombie(&self, status: bool) {
         self.is_zombie.store(status, Ordering::Release)
     }
-
     /// get the heap top of the process
     pub fn get_heap_top(&self) -> u64 {
         self.heap_top.load(Ordering::Acquire)
     }
-
     /// set the heap top of the process
     pub fn set_heap_top(&self, top: u64) {
         self.heap_top.store(top, Ordering::Release)
     }
-
     /// get the heap bottom of the process
     pub fn get_heap_bottom(&self) -> u64 {
         self.heap_bottom.load(Ordering::Acquire)
     }
-
     /// set the heap bottom of the process
     pub fn set_heap_bottom(&self, bottom: u64) {
         self.heap_bottom.store(bottom, Ordering::Release)
     }
-
-    /// set the process as blocked by vfork
-    pub fn set_vfork_block(&self, value: bool) {
-        *self.blocked_by_vfork.lock() = value;
-    }
-
-    pub fn get_vfork_block(&self) -> bool {
-        *self.blocked_by_vfork.lock()
-    }
-
     /// set the executable file path of the process
     pub fn set_file_path(&self, path: String) {
         let mut file_path = self.file_path.lock();
         *file_path = path;
     }
-
     /// get the executable file path of the process
     pub fn get_file_path(&self) -> String {
         (*self.file_path.lock()).clone()
     }
-
     /// 若进程运行完成，则获取其返回码
     /// 若正在运行（可能上锁或没有上锁），则返回None
     pub fn get_code_if_exit(&self) -> Option<i32> {
@@ -216,37 +165,19 @@ impl Process {
             heap_top: AtomicU64::new(heap_bottom),
             fd_manager: FdManager::new(fd_table, cwd, mask, FD_LIMIT_ORIGIN),
 
-            signal_modules: Mutex::new(BTreeMap::new()),
-            robust_list: Mutex::new(BTreeMap::new()),
-            blocked_by_vfork: Mutex::new(false),
             file_path: Mutex::new(String::new()),
         }
     }
+
     /// 根据给定参数创建一个新的进程，作为应用程序初始进程
     pub fn init(args: Vec<String>, envs: &Vec<String>) -> AxResult<AxTaskRef> {
         let mut path = args[0].clone();
         let mut memory_set = MemorySet::new_memory_set();
 
-        {
-            use axhal::mem::virt_to_phys;
-            use axhal::paging::MappingFlags;
-            // 生成信号跳板
-            let signal_trampoline_vaddr: VirtAddr = (SIGNAL_TRAMPOLINE).into();
-            let signal_trampoline_paddr = virt_to_phys((start_signal_trampoline as usize).into());
-            memory_set.map_page_without_alloc(
-                signal_trampoline_vaddr,
-                signal_trampoline_paddr,
-                MappingFlags::READ
-                    | MappingFlags::EXECUTE
-                    | MappingFlags::USER
-                    | MappingFlags::WRITE,
-            )?;
-        }
         let page_table_token = memory_set.page_table_token();
         if page_table_token != 0 {
             unsafe {
                 write_page_table_root0(page_table_token.into());
-                #[cfg(target_arch = "riscv64")]
                 riscv::register::sstatus::set_sum();
             };
         }
@@ -307,14 +238,6 @@ impl Process {
         write_trapframe_to_kstack(new_task.get_kernel_stack_top().unwrap(), &new_trap_frame);
         new_process.tasks.lock().push(Arc::clone(&new_task));
 
-        new_process
-            .signal_modules
-            .lock()
-            .insert(new_task.id().as_u64(), SignalModule::init_signal(None));
-        new_process
-            .robust_list
-            .lock()
-            .insert(new_task.id().as_u64(), FutexRobustList::default());
         PID2PC
             .lock()
             .insert(new_process.pid(), Arc::clone(&new_process));
@@ -418,39 +341,6 @@ impl Process {
         // 重置用户堆
         self.set_heap_bottom(heap_bottom.as_usize() as u64);
         self.set_heap_top(heap_bottom.as_usize() as u64);
-        // // 重置robust list
-        self.robust_list.lock().clear();
-        self.robust_list
-            .lock()
-            .insert(current_task.id().as_u64(), FutexRobustList::default());
-
-        {
-            use axhal::mem::virt_to_phys;
-            use axhal::paging::MappingFlags;
-            // 重置信号处理模块
-            // 此时只会留下一个线程
-            self.signal_modules.lock().clear();
-            self.signal_modules
-                .lock()
-                .insert(current_task.id().as_u64(), SignalModule::init_signal(None));
-
-            // 生成信号跳板
-            let signal_trampoline_vaddr: VirtAddr = (SIGNAL_TRAMPOLINE).into();
-            let signal_trampoline_paddr = virt_to_phys((start_signal_trampoline as usize).into());
-            let memory_set_wrapper = self.memory_set.lock();
-            let mut memory_set = memory_set_wrapper.lock();
-            if memory_set.query(signal_trampoline_vaddr).is_err() {
-                let _ = memory_set.map_page_without_alloc(
-                    signal_trampoline_vaddr,
-                    signal_trampoline_paddr,
-                    MappingFlags::READ
-                        | MappingFlags::EXECUTE
-                        | MappingFlags::USER
-                        | MappingFlags::WRITE,
-                );
-            }
-            drop(memory_set);
-        }
 
         // user_stack_top = user_stack_top / PAGE_SIZE_4K * PAGE_SIZE_4K;
         let new_trap_frame =
@@ -479,7 +369,6 @@ impl Process {
         ptid: usize,
         tls: usize,
         ctid: usize,
-        exit_signal: Option<SignalNo>,
     ) -> AxResult<u64> {
         let clone_flags = CloneFlags::from_bits((flags & !0x3f) as u32).unwrap();
         // 是否共享虚拟地址空间
@@ -546,26 +435,7 @@ impl Process {
         TID2TASK
             .lock()
             .insert(new_task.id().as_u64(), Arc::clone(&new_task));
-        let new_handler = if clone_flags.contains(CloneFlags::CLONE_SIGHAND) {
-            // let curr_id = current().id().as_u64();
-            self.signal_modules
-                .lock()
-                .get_mut(&current().id().as_u64())
-                .unwrap()
-                .signal_handler
-                .clone()
-        } else {
-            Arc::new(Mutex::new(
-                self.signal_modules
-                    .lock()
-                    .get_mut(&current().id().as_u64())
-                    .unwrap()
-                    .signal_handler
-                    .lock()
-                    .clone(),
-            ))
-            // info!("curr_id: {:X}", (&curr_id as *const _ as usize));
-        };
+
         // 检查是否在父任务中写入当前新任务的tid
         if clone_flags.contains(CloneFlags::CLONE_PARENT_SETTID)
             & self.manual_alloc_for_lazy(ptid.into()).is_ok()
@@ -646,18 +516,6 @@ impl Process {
             // );
             self.tasks.lock().push(Arc::clone(&new_task));
 
-            let mut signal_module = SignalModule::init_signal(Some(new_handler));
-            // exit signal, default to be SIGCHLD
-            if exit_signal.is_some() {
-                signal_module.set_exit_signal(exit_signal.unwrap());
-            }
-            self.signal_modules
-                .lock()
-                .insert(new_task.id().as_u64(), signal_module);
-
-            self.robust_list
-                .lock()
-                .insert(new_task.id().as_u64(), FutexRobustList::default());
             return_id = new_task.id().as_u64();
         } else {
             let mut cwd_src = Arc::new(Mutex::new(String::from("/").into()));
@@ -688,21 +546,7 @@ impl Process {
             // 记录该进程，防止被回收
             PID2PC.lock().insert(process_id, Arc::clone(&new_process));
             new_process.tasks.lock().push(Arc::clone(&new_task));
-            // 若是新建了进程，那么需要把进程的父子关系进行记录
-            let mut signal_module = SignalModule::init_signal(Some(new_handler));
-            // exit signal, default to be SIGCHLD
-            if exit_signal.is_some() {
-                signal_module.set_exit_signal(exit_signal.unwrap());
-            }
-            new_process
-                .signal_modules
-                .lock()
-                .insert(new_task.id().as_u64(), signal_module);
 
-            new_process
-                .robust_list
-                .lock()
-                .insert(new_task.id().as_u64(), FutexRobustList::default());
             return_id = new_process.pid;
             PID2PC
                 .lock()
@@ -807,35 +651,5 @@ impl Process {
     /// Set the current working directory of the process
     pub fn set_cwd(&self, cwd: String) {
         *self.fd_manager.cwd.lock() = cwd.into();
-    }
-}
-
-/// 与信号相关的方法
-impl Process {
-    /// 查询当前任务是否存在未决信号
-    pub fn have_signals(&self) -> Option<usize> {
-        let current_task = current();
-        self.signal_modules
-            .lock()
-            .get(&current_task.id().as_u64())
-            .unwrap()
-            .signal_set
-            .find_signal()
-            .map_or_else(|| current_task.check_pending_signal(), Some)
-    }
-
-    /// Judge whether the signal request the interrupted syscall to restart
-    ///
-    /// # Return
-    /// - None: There is no siganl need to be delivered
-    /// - Some(true): The interrupted syscall should be restarted
-    /// - Some(false): The interrupted syscall should not be restarted
-    pub fn have_restart_signals(&self) -> Option<bool> {
-        let current_task = current();
-        self.signal_modules
-            .lock()
-            .get(&current_task.id().as_u64())
-            .unwrap()
-            .have_restart_signal()
     }
 }

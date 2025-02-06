@@ -5,18 +5,19 @@ use core::{mem::ManuallyDrop, ops::Deref};
 use alloc::boxed::Box;
 
 use memory_addr::VirtAddr;
+
 use axhal::arch::TrapFrame;
 
-use crate::{
+use crate::{config::SMP, task::{
     current_processor, processor::Processor, schedule::add_wait_for_exit_queue, AxTask, AxTaskRef,
-};
+}};
 
-pub use taskctx::{TaskId, TaskInner};
+pub use crate::taskctx::{TaskId, TaskInner};
 
 use spinlock::{SpinNoIrq, SpinNoIrqOnly, SpinNoIrqOnlyGuard};
 use core::sync::atomic::{AtomicBool, Ordering};
 
-extern "C" {
+unsafe extern "C" {
     fn _stdata();
     fn _etdata();
     fn _etbss();
@@ -157,11 +158,11 @@ pub fn new_task<F>(
 where
     F: FnOnce() + Send + 'static,
 {
-    use axhal::time::current_time_nanos;
+    use axhal::time::monotonic_time_nanos  as current_time_nanos;
 
-    use crate::schedule::add_wait_for_exit_queue;
+    use crate::task::schedule::add_wait_for_exit_queue;
 
-    let mut task = taskctx::TaskInner::new(
+    let mut task = crate::taskctx::TaskInner::new(
         entry,
         name,
         stack_size,
@@ -183,7 +184,7 @@ where
     );
 
     // 设置 CPU 亲和集
-    task.set_cpu_set((1 << axconfig::SMP) - 1, 1, axconfig::SMP);
+    task.set_cpu_set((1 << SMP) - 1, 1, SMP);
 
     task.reset_time_stat(current_time_nanos() as usize);
 
@@ -193,45 +194,11 @@ where
     axtask
 }
 
-#[cfg(not(feature = "monolithic"))]
-/// Create a new task.
-///
-/// # Arguments
-/// - `entry`: The entry function of the task.
-/// - `name`: The name of the task.
-/// - `stack_size`: The size of the kernel stack.
-pub fn new_task<F>(entry: F, name: String, stack_size: usize) -> AxTaskRef
-where
-    F: FnOnce() + Send + 'static,
-{
-    let mut task = taskctx::TaskInner::new(
-        entry,
-        name,
-        stack_size,
-        #[cfg(feature = "tls")]
-        tls_area(),
-    );
-    #[cfg(feature = "tls")]
-    let tls = VirtAddr::from(task.get_tls_ptr());
-    #[cfg(not(feature = "tls"))]
-    let tls = VirtAddr::from(0);
-
-    task.init_task_ctx(
-        task_entry as usize,
-        task.get_kernel_stack_top().unwrap().into(),
-        tls,
-    );
-    // a new task start, irq should be enabled by default
-    let axtask = Arc::new(AxTask::new(ScheduleTask::new(task, true)));
-    add_wait_for_exit_queue(&axtask);
-    axtask
-}
-
 pub(crate) fn new_init_task(name: String) -> AxTaskRef {
     // init task irq should be disabled by default 
     // it would be reinit when switch happend
     let axtask = Arc::new(AxTask::new(ScheduleTask::new(
-        taskctx::TaskInner::new_init(
+        crate::taskctx::TaskInner::new_init(
             name,
             #[cfg(feature = "tls")]
             tls_area(),
@@ -240,7 +207,7 @@ pub(crate) fn new_init_task(name: String) -> AxTaskRef {
     )));
 
     // 设置 CPU 亲和集
-    axtask.set_cpu_set((1 << axconfig::SMP) - 1, 1, axconfig::SMP);
+    axtask.set_cpu_set((1 << SMP) - 1, 1, SMP);
 
     add_wait_for_exit_queue(&axtask);
     axtask
@@ -251,7 +218,7 @@ pub struct CurrentTask(ManuallyDrop<AxTaskRef>);
 
 impl CurrentTask {
     pub(crate) fn try_get() -> Option<Self> {
-        let ptr: *const super::AxTask = taskctx::current_task_ptr();
+        let ptr: *const super::AxTask = crate::taskctx::current_task_ptr();
         if !ptr.is_null() {
             Some(Self(unsafe { ManuallyDrop::new(AxTaskRef::from_raw(ptr)) }))
         } else {
@@ -280,14 +247,14 @@ impl CurrentTask {
         #[cfg(feature = "tls")]
         axhal::arch::write_thread_pointer(init_task.get_tls_ptr());
         let ptr = Arc::into_raw(init_task);
-        taskctx::set_current_task_ptr(ptr);
+        unsafe { crate::taskctx::set_current_task_ptr(ptr) };
     }
 
     pub(crate) unsafe fn set_current(prev: Self, next: AxTaskRef) {
         let Self(arc) = prev;
         ManuallyDrop::into_inner(arc); // `call Arc::drop()` to decrease prev task reference count.
         let ptr = Arc::into_raw(next);
-        taskctx::set_current_task_ptr(ptr);
+        unsafe { crate::taskctx::set_current_task_ptr(ptr) };
     }
 }
 
@@ -304,7 +271,7 @@ extern "C" fn task_entry() -> ! {
     
     current_processor().switch_post();
 
-    let task = crate::current();
+    let task = crate::task::current();
     if let Some(entry) = task.get_entry() {
         cfg_if::cfg_if! {
             if #[cfg(feature = "monolithic")] {
@@ -328,5 +295,5 @@ extern "C" fn task_entry() -> ! {
         }
     }
     // only for kernel task
-    crate::exit(0);
+    crate::task::exit(0);
 }

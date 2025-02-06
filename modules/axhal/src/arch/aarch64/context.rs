@@ -175,3 +175,74 @@ unsafe extern "C" fn fpstate_switch(_current_fpstate: &mut FpState, _next_fpstat
         ret",
     )
 }
+
+/// Switches to another task.
+///
+/// It first saves the current task's context from CPU to this place, and then
+/// restores the next task's context from `next_ctx` to CPU.
+pub fn task_context_switch(prev_ctx: &mut TaskContext, next_ctx: &TaskContext) {
+    #[cfg(feature = "fp_simd")]
+    prev_ctx.fp_state.switch_to(&next_ctx.fp_state);
+    unsafe { context_switch(prev_ctx, next_ctx) }
+}
+
+#[unsafe(no_mangle)]
+/// To handle the first time into the user space
+///
+/// 1. push the given trap frame into the kernel stack
+/// 2. go into the user space
+///
+/// args:
+///
+/// 1. kernel_sp: the top of the kernel stack
+pub fn first_into_user(kernel_sp: usize) -> ! {
+    use crate::arch::disable_irqs;
+
+    let trap_frame_size = core::mem::size_of::<TrapFrame>();
+    let kernel_base = kernel_sp - trap_frame_size;
+    info!("kernel_base {:#x} kernel_sp{:#x}", kernel_base, kernel_sp);
+    // 在保证将寄存器都存储好之后，再开启中断
+    disable_irqs();
+    crate::arch::flush_tlb(None);
+    crate::arch::flush_icache_all();
+    //crate::arch::flush_dcache_all();
+    unsafe {
+        core::arch::asm!(
+            r"
+            mov     sp, {kernel_base}
+            ldp     x30, x9, [sp, 30 * 8]    // load user sp_el0
+            ldp     x10, x11, [sp, 32 * 8]   // load ELR, SPSR
+            msr     elr_el1, x10
+            msr     spsr_el1, x11
+        
+            ldr     x12, [sp, 34 * 8]
+        
+            msr     tpidr_el0, x12  // restore user tls pointer
+           
+            mrs     x13,  sp_el0    // save current ktask ptr
+            str     x13,  [sp, 31 * 8]
+            msr     sp_el0, x9     // restore user sp
+        
+            ldp     x28, x29, [sp, 28 * 8]
+            ldp     x26, x27, [sp, 26 * 8]
+            ldp     x24, x25, [sp, 24 * 8]
+            ldp     x22, x23, [sp, 22 * 8]
+            ldp     x20, x21, [sp, 20 * 8]
+            ldp     x18, x19, [sp, 18 * 8]
+            ldp     x16, x17, [sp, 16 * 8]
+            ldp     x14, x15, [sp, 14 * 8]
+            ldp     x12, x13, [sp, 12 * 8]
+            ldp     x10, x11, [sp, 10 * 8]
+            ldp     x8, x9, [sp, 8 * 8]
+            ldp     x6, x7, [sp, 6 * 8]
+            ldp     x4, x5, [sp, 4 * 8]
+            ldp     x2, x3, [sp, 2 * 8]
+            ldp     x0, x1, [sp]
+            add     sp, sp, 35 * 8
+            eret
+            ",
+            kernel_base = in(reg) kernel_base,
+        )
+    }
+    core::panic!("already in user mode!")
+}

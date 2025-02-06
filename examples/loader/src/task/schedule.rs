@@ -1,10 +1,11 @@
 use alloc::{collections::BTreeMap, sync::Arc};
+use axlog::{debug, trace};
 
 use core::mem::ManuallyDrop;
 
-use crate::processor::{current_processor, PrevCtxSave, Processor};
+use crate::task::processor::{current_processor, PrevCtxSave, Processor};
 use crate::task::{CurrentTask, TaskState};
-use crate::{AxTaskRef, WaitQueue};
+use crate::task::{AxTaskRef, WaitQueue};
 use spinlock::{SpinNoIrq, SpinNoIrqOnlyGuard};
 
 /// A map to store tasks' wait queues, which stores tasks that are waiting for this task to exit.
@@ -30,7 +31,7 @@ pub(crate) fn notify_wait_for_exit(task: &AxTaskRef) {
 }
 
 pub(crate) fn exit_current(exit_code: i32) -> ! {
-    let curr = crate::current();
+    let curr = crate::task::current();
     debug!("task exit: {}, exit_code={}", curr.id_name(), exit_code);
     curr.set_state(TaskState::Exited);
 
@@ -50,7 +51,7 @@ pub(crate) fn exit_current(exit_code: i32) -> ! {
 }
 
 pub(crate) fn yield_current() {
-    let curr = crate::current();
+    let curr = crate::task::current();
     assert!(curr.is_runable());
     trace!("task yield: {}", curr.id_name());
     schedule();
@@ -79,7 +80,7 @@ pub fn scheduler_timer_tick() {
 }
 
 pub fn set_current_priority(prio: isize) -> bool {
-    current_processor().set_priority(crate::current().as_task_ref(), prio)
+    current_processor().set_priority(crate::task::current().as_task_ref(), prio)
 }
 
 pub fn wakeup_task(task: AxTaskRef) {
@@ -107,7 +108,7 @@ pub fn schedule() {
 }
 
 fn switch_to(mut next_task: AxTaskRef) {
-    let prev_task = crate::current();
+    let prev_task = crate::task::current();
 
     // task in a disable_preempt context? it not allowed ctx switch
     #[cfg(feature = "preempt")]
@@ -169,12 +170,10 @@ fn switch_to(mut next_task: AxTaskRef) {
         return;
     }
 
-    // 当任务进行切换时，更新两个任务的时间统计信息    
-    {
-        let current_timestamp = axhal::time::current_time_nanos() as usize;
-        next_task.time_stat_when_switch_to(current_timestamp);
-        prev_task.time_stat_when_switch_from(current_timestamp);
-    }
+    // 当任务进行切换时，更新两个任务的时间统计信息
+    let current_timestamp = axhal::time::monotonic_time_nanos() as usize;
+    next_task.time_stat_when_switch_to(current_timestamp);
+    prev_task.time_stat_when_switch_from(current_timestamp);
 
     trace!(
         "context switch: {} -> {}",
@@ -195,11 +194,9 @@ fn switch_to(mut next_task: AxTaskRef) {
         );
 
         assert!(Arc::strong_count(&next_task) >= 1);
-        {
-            let page_table_token = *next_task.page_table_token.get();
-            if page_table_token != 0 {
-                axhal::arch::write_page_table_root0(page_table_token.into());
-            }
+        let page_table_token = *next_task.page_table_token.get();
+        if page_table_token != 0 {
+            axhal::arch::write_page_table_root(page_table_token.into());
         }
 
         let prev_ctx = PrevCtxSave::new(core::mem::transmute::<
@@ -211,7 +208,7 @@ fn switch_to(mut next_task: AxTaskRef) {
 
         CurrentTask::set_current(prev_task, next_task);
 
-        axhal::arch::task_context_switch(&mut (*prev_ctx_ptr), &(*next_ctx_ptr));
+        task_context_switch(&mut (*prev_ctx_ptr), &(*next_ctx_ptr));
 
         current_processor().switch_post();
 

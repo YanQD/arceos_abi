@@ -1,8 +1,8 @@
 use alloc::sync::Arc;
 use core::ops::Deref;
-use crate::AxTaskRef;
+use crate::task::AxTaskRef;
 use crate::task::TaskState;
-use crate::schedule::wakeup_task;
+use crate::task::schedule::wakeup_task;
 
 use linked_list::{GetLinks, Links, List};
 

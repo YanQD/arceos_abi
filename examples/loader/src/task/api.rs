@@ -1,19 +1,20 @@
 //! Task APIs for multi-task configuration.
 
 use alloc::{string::String, sync::Arc};
-use axhal::KERNEL_PROCESS_ID;
+use axlog::info;
 
-use crate::task::{ScheduleTask, TaskState};
+use crate::config::{KERNEL_PROCESS_ID, TASK_STACK_SIZE};
+use crate::task::task::{ScheduleTask, TaskState};
 
-use crate::schedule::get_wait_for_exit_queue;
-#[doc(cfg(feature = "multitask"))]
-pub use crate::task::{new_task, CurrentTask, TaskId};
-#[doc(cfg(feature = "multitask"))]
-pub use crate::wait_queue::WaitQueue;
+use crate::task::schedule::get_wait_for_exit_queue;
 
-pub use crate::processor::{current_processor, Processor};
+pub use crate::task::task::{new_task, CurrentTask, TaskId};
 
-pub use crate::schedule::schedule;
+pub use crate::task::wait_queue::WaitQueue;
+
+pub use crate::task::processor::{current_processor, Processor};
+
+pub use crate::task::schedule::schedule;
 
 #[cfg(feature = "irq")]
 pub use crate::schedule::schedule_timeout;
@@ -55,7 +56,7 @@ pub fn current() -> CurrentTask {
 pub fn init_scheduler() {
     info!("Initialize scheduling...");
 
-    crate::processor::init();
+    crate::task::processor::init();
     #[cfg(feature = "irq")]
     crate::timers::init();
 
@@ -64,7 +65,7 @@ pub fn init_scheduler() {
 
 /// Initializes the task scheduler for secondary CPUs.
 pub fn init_scheduler_secondary() {
-    crate::processor::init_secondary();
+    crate::task::processor::init_secondary();
 }
 
 /// Handles periodic timer ticks for the task manager.
@@ -124,7 +125,7 @@ pub fn spawn<F>(f: F) -> AxTaskRef
 where
     F: FnOnce() + Send + 'static,
 {
-    spawn_raw(f, "".into(), axconfig::TASK_STACK_SIZE)
+    spawn_raw(f, "".into(), TASK_STACK_SIZE)
 }
 
 /// Set the priority for current task.
@@ -137,20 +138,20 @@ where
 ///
 /// [CFS]: https://en.wikipedia.org/wiki/Completely_Fair_Scheduler
 pub fn set_priority(prio: isize) -> bool {
-    crate::schedule::set_current_priority(prio)
+    crate::task::schedule::set_current_priority(prio)
 }
 
 /// Current task gives up the CPU time voluntarily, and switches to another
 /// ready task.
 pub fn yield_now() {
-    crate::schedule::yield_current();
+    crate::task::schedule::yield_current();
 }
 
 /// Current task is going to sleep for the given duration.
 ///
 /// If the feature `irq` is not enabled, it uses busy-wait instead.
 pub fn sleep(dur: core::time::Duration) {
-    sleep_until(axhal::time::current_time() + dur);
+    sleep_until(axhal::time::monotonic_time() + dur);
 }
 
 /// Current task is going to sleep, it will be woken up at the given deadline.
@@ -164,7 +165,7 @@ pub fn sleep_until(deadline: axhal::time::TimeValue) {
 }
 /// wake up task
 pub fn wakeup_task(task: AxTaskRef) {
-    crate::schedule::wakeup_task(task)
+    crate::task::schedule::wakeup_task(task)
 }
 
 /// Current task is going to sleep, it will be woken up when the given task exits.
@@ -193,7 +194,7 @@ pub fn wake_vfork_process(task: &AxTaskRef) {
 
 /// Exits the current task.
 pub fn exit(exit_code: i32) -> ! {
-    crate::schedule::exit_current(exit_code)
+    crate::task::schedule::exit_current(exit_code)
 }
 
 /// The idle task routine.
@@ -206,28 +207,4 @@ pub fn run_idle() -> ! {
         #[cfg(feature = "irq")]
         axhal::arch::wait_for_irqs();
     }
-}
-
-pub fn dump_curr_backtrace() {
-    dump_task_backtrace(current().as_task_ref().clone());
-}
-pub fn dump_task_backtrace(task: AxTaskRef) {
-    use axbacktrace::{dump_backtrace, Unwind, UnwindIf, StackInfo};
-
-    let stack_low = task.get_kernel_stack_down().unwrap();
-    let stack_high = task.get_kernel_stack_top().unwrap();
-    info!("dump task: {}, stack range: {:#016x}: {:#016x}", 
-        task.id_name(), stack_low, stack_high);
-    let stack_info = StackInfo::new(stack_low,stack_high);
-
-    //Init Unwind instance from current context
-    let curr = crate::current();
-    let mut unwind = if curr.ptr_eq(&task) {
-        Unwind::new_from_cur_ctx(stack_info)
-    } else {
-        let (pc, fp) = task.ctx_unwind();
-        Unwind::new(pc,fp,stack_info)
-    };
-    // dump current task trace
-    dump_backtrace(&mut unwind);
 }

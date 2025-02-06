@@ -15,6 +15,8 @@ members = [
     "modules/axruntime",
     "modules/axsync",
     "modules/axtask",
+    "modules/axmem",
+    "modules/axprocess",
 
     "api/axfeat",
     "api/arceos_api",
@@ -63,6 +65,8 @@ axruntime = { path = "modules/axruntime" }
 axsync = { path = "modules/axsync" }
 axtask = { path = "modules/axtask" }
 axdma = { path = "modules/axdma" }
+axmem = { path = "modules/axmem" }
+axprocess = { path = "modules/axprocess" }
 
 [profile.release]
 lto = true

@@ -5,6 +5,9 @@ mod trap;
 
 use core::arch::asm;
 
+pub use context::first_into_user;
+pub use context::task_context_switch;
+
 use aarch64_cpu::registers::{DAIF, TPIDR_EL0, TTBR0_EL1, TTBR1_EL1, VBAR_EL1};
 use memory_addr::{PhysAddr, VirtAddr};
 use tock_registers::interfaces::{Readable, Writeable};

@@ -133,7 +133,7 @@ impl<T: ?Sized> Mutex<T> {
             "{} tried to release mutex it doesn't own",
             current().id_name()
         );
-        self.wq.notify_one(true);
+        self.wq.notify_one();
     }
 
     /// Returns a mutable reference to the underlying data.

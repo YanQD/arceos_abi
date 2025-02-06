@@ -1,10 +1,10 @@
 #[cfg(feature = "irq")]
 use crate::schedule::schedule_timeout;
-use crate::schedule::schedule;
+use crate::task::schedule::schedule;
 use spinlock::SpinNoIrq;
-use crate::wait_list::WaitTaskList;
-use crate::wait_list::WaitTaskNode;
-use crate::AxTaskRef;
+use crate::task::wait_list::WaitTaskList;
+use crate::task::wait_list::WaitTaskNode;
+use crate::task::AxTaskRef;
 use alloc::sync::Arc;
 /// A queue to store sleeping tasks.
 ///
@@ -33,7 +33,7 @@ use alloc::sync::Arc;
 #[macro_export]
 macro_rules! declare_wait {
      ($name: ident) => {
-         let $name = Arc::new(WaitTaskNode::new($crate::current().as_task_ref().clone()));
+         let $name = Arc::new(WaitTaskNode::new($crate::task::current().as_task_ref().clone()));
      };
 }
 

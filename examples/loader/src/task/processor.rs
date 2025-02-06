@@ -1,16 +1,16 @@
 use alloc::collections::VecDeque;
 use alloc::sync::Arc;
+use axlog::debug;
 use core::mem::ManuallyDrop;
 use core::sync::atomic::{AtomicUsize, Ordering};
 use lazy_init::LazyInit;
 use scheduler::BaseScheduler;
 use spinlock::{SpinNoIrq, SpinNoIrqOnly, SpinNoIrqOnlyGuard};
 
-use axhal::KERNEL_PROCESS_ID;
+use crate::config::{KERNEL_PROCESS_ID, TASK_STACK_SIZE};
+use crate::task::task::{new_init_task, new_task, CurrentTask, TaskState};
 
-use crate::task::{new_init_task, new_task, CurrentTask, TaskState};
-
-use crate::{AxTaskRef, Scheduler, WaitQueue};
+use crate::task::{AxTaskRef, Scheduler, WaitQueue};
 
 static PROCESSORS: SpinNoIrqOnly<VecDeque<&'static Processor>> =
     SpinNoIrqOnly::new(VecDeque::new());
@@ -234,7 +234,7 @@ pub(crate) fn init() {
     const IDLE_TASK_STACK_SIZE: usize = 4096;
 
     let idle_task = new_task(
-        || crate::run_idle(),
+        || crate::task::run_idle(),
         "idle".into(), // FIXME: name 现已被用作 prctl 使用的程序名，应另选方式判断 idle 进程
         IDLE_TASK_STACK_SIZE,
         KERNEL_PROCESS_ID,
@@ -256,7 +256,7 @@ pub(crate) fn init() {
 
 pub(crate) fn init_secondary() {
     // FIXME: name 现已被用作 prctl 使用的程序名，应另选方式判断 idle 进程
-    let idle_task = new_init_task("idle".into());    
+    let idle_task = new_init_task("idle".into());
     idle_task.set_process_id(KERNEL_PROCESS_ID);
 
     let processor = Processor::new(idle_task.clone());

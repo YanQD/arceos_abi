@@ -1,56 +1,37 @@
-use core::sync::atomic::{AtomicU64, Ordering};
-
-use kernel_guard::NoOp;
-use lazyinit::LazyInit;
+use alloc::sync::Arc;
+use axhal::time::current_time;
+use lazy_init::LazyInit;
+use spinlock::SpinNoIrq;
 use timer_list::{TimeValue, TimerEvent, TimerList};
 
-use axhal::time::wall_time;
+use crate::{AxTaskRef,TaskState};
 
-use crate::{AxTaskRef, select_run_queue};
+// TODO: per-CPU
+static TIMER_LIST: LazyInit<SpinNoIrq<TimerList<TaskWakeupEvent>>> = LazyInit::new();
 
-static TIMER_TICKET_ID: AtomicU64 = AtomicU64::new(1);
-
-percpu_static! {
-    TIMER_LIST: LazyInit<TimerList<TaskWakeupEvent>> = LazyInit::new(),
-}
-
-struct TaskWakeupEvent {
-    ticket_id: u64,
-    task: AxTaskRef,
-}
+struct TaskWakeupEvent(AxTaskRef);
 
 impl TimerEvent for TaskWakeupEvent {
     fn callback(self, _now: TimeValue) {
-        // Ignore the timer event if timeout was set but not triggered
-        // (wake up by `WaitQueue::notify()`).
-        // Judge if this timer event is still valid by checking the ticket ID.
-        if self.task.timer_ticket() != self.ticket_id {
-            // Timer ticket ID is not matched.
-            // Just ignore this timer event and return.
-            return;
-        }
-
-        // Timer ticket match.
-        select_run_queue::<NoOp>(&self.task).unblock_task(self.task, true)
+        crate::schedule::wakeup_task(self.0);
     }
 }
 
 pub fn set_alarm_wakeup(deadline: TimeValue, task: AxTaskRef) {
-    TIMER_LIST.with_current(|timer_list| {
-        let ticket_id = TIMER_TICKET_ID.fetch_add(1, Ordering::AcqRel);
-        task.set_timer_ticket(ticket_id);
-        timer_list.set(deadline, TaskWakeupEvent { ticket_id, task });
-    })
+    let mut timer_list = TIMER_LIST.lock();
+    task.set_state(TaskState::Blocking);
+    timer_list.set(deadline, TaskWakeupEvent(task));
+    drop(timer_list)
+}
+
+pub fn cancel_alarm(task: &AxTaskRef) {
+    TIMER_LIST.lock().cancel(|t| Arc::ptr_eq(&t.0, task));
 }
 
 pub fn check_events() {
     loop {
-        let now = wall_time();
-        let event = unsafe {
-            // Safety: IRQs are disabled at this time.
-            TIMER_LIST.current_ref_mut_raw()
-        }
-        .expire_one(now);
+        let now = current_time();
+        let event = TIMER_LIST.lock().expire_one(now);
         if let Some((_deadline, event)) = event {
             event.callback(now);
         } else {
@@ -60,7 +41,5 @@ pub fn check_events() {
 }
 
 pub fn init() {
-    TIMER_LIST.with_current(|timer_list| {
-        timer_list.init_once(TimerList::new());
-    });
+    TIMER_LIST.init_by(SpinNoIrq::new(TimerList::new()));
 }

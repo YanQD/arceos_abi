@@ -7,6 +7,9 @@ mod trap;
 
 use core::arch::asm;
 
+pub use context::first_into_user;
+pub use context::task_context_switch;
+
 use memory_addr::{MemoryAddr, PhysAddr, VirtAddr};
 use x86::{controlregs, msr, tlb};
 use x86_64::instructions::interrupts;

@@ -1,0 +1,14 @@
+[package]
+name = "axmem"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[dependencies]
+axerrno = "0.1"
+axlog = { workspace = true }
+axsync = { workspace = true }
+axtask = { workspace = true }
+axalloc = { workspace = true }
+axhal ={ workspace = true, features = ["paging"] }

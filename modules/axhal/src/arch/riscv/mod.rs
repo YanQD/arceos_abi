@@ -8,6 +8,9 @@ use memory_addr::{PhysAddr, VirtAddr};
 use riscv::asm;
 use riscv::register::{satp, sstatus, stvec};
 
+pub use context::first_into_user;
+pub use context::task_context_switch;
+
 pub use self::context::{GeneralRegisters, TaskContext, TrapFrame};
 
 /// Allows the current CPU to respond to interrupts.
@@ -107,3 +110,4 @@ pub fn read_thread_pointer() -> usize {
 pub unsafe fn write_thread_pointer(tp: usize) {
     core::arch::asm!("mv tp, {}", in(reg) tp)
 }
+
