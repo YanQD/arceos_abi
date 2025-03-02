@@ -102,8 +102,9 @@ impl TaskContext {
     //     unsafe { core::mem::MaybeUninit::zeroed().assume_init() }
     // }
     pub fn new() -> Self {
+        let satp = crate::paging::kernel_page_table_root();
         Self {
-            satp: crate::paging::kernel_page_table_root(),
+            satp,
             ..Default::default()
         }
     }
@@ -128,8 +129,14 @@ impl TaskContext {
         }
         unsafe {
             if self.satp != next_ctx.satp {
-                super::write_page_table_root(next_ctx.satp);
+                crate::paging::set_kernel_page_table_root(next_ctx.satp);
             }
+            let pc: usize;
+            core::arch::asm!(
+                "auipc {}, 0",
+                out(reg) pc,
+            );
+            info!("Current PC: 0x{:x}", pc);
 
             // TODO: switch FP states
             context_switch(self, next_ctx)
